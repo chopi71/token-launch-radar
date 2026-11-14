@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Token Launch Radar — pre-token protocols ranked by implied launch value</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="masthead">
+  <div class="masthead-in">
+    <div>
+      <h1>Token Launch Radar</h1>
+      <p class="tagline">Every protocol that records no token yet, ranked by what its launch would be worth — priced from the snapshot's own figures.</p>
+    </div>
+    <div class="mast-stats" id="mast-stats"></div>
+  </div>
+</header>
+
+<main>
+  <section class="model-strip" id="model-strip"></section>
+
+  <section class="controls" id="board-controls">
+    <input id="q" type="search" placeholder="Search protocols…" autocomplete="off">
+    <select id="f-category"><option value="">All categories</option></select>
+    <select id="f-chain"><option value="">All chains</option></select>
+    <label class="toggle"><input id="f-watch" type="checkbox"> Watchlist only</label>
+    <select id="f-sort">
+      <option value="rank">Sort: implied value</option>
+      <option value="tvl">Sort: TVL</option>
+      <option value="change">Sort: 7d growth</option>
+      <option value="age">Sort: years tokenless</option>
+    </select>
+    <span class="count" id="row-count"></span>
+  </section>
+
+  <section id="board-view">
+    <table class="board">
+      <thead>
+        <tr>
+          <th class="num">#</th><th>Protocol</th><th class="num">TVL</th><th class="num">7d</th>
+          <th class="num">Tokenless</th><th>Chains</th><th class="num">Implied value</th><th></th>
+        </tr>
+      </thead>
+      <tbody id="board-body"></tbody>
+    </table>
+    <p class="foot-note" id="board-note"></p>
+  </section>
+
+  <section id="detail-view" hidden></section>
+</main>
+
+<footer>
+  <p>Implied value = TVL × the category's market-cap/TVL multiple (from the protocols whose token already trades in this snapshot), adjusted for 7-day TVL growth, years run with no token, chain breadth, and a size compression past $1B of TVL. A protocol here <em>records</em> no token in the snapshot; the board is the model's claim, not a prediction that a token will be issued. Snapshot: DefiLlama protocols, as of <span id="foot-date"></span>.</p>
+</footer>
+
+<script src="../data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
