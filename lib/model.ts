@@ -50,6 +50,21 @@ export interface RadarRow extends BoardRow {
   age_years: number | null;
   watchlist: boolean;
   factors: { multiple: number; growth: number; maturity: number; breadth: number; size: number };
+  /** How firmly the row's multiple is anchored: the traded-peer count behind it. */
+  confidence: { band: 'high' | 'medium' | 'low'; peers: number; range_usd: [number, number] };
+}
+
+/**
+ * A confidence band for one row's implied value, from the evidence behind its
+ * multiple: a category priced from many traded peers is a firmer claim than
+ * one priced from the all-peers fallback. The range is the implied value
+ * widened by the band's spread — a statement of model uncertainty, printed
+ * next to the point estimate wherever the row is shown.
+ */
+export function confidenceFor(peers: number, value: number): { band: 'high' | 'medium' | 'low'; peers: number; range_usd: [number, number] } {
+  const band = peers >= 10 ? 'high' : peers >= 5 ? 'medium' : 'low';
+  const spread = band === 'high' ? 1.6 : band === 'medium' ? 2.2 : 3;
+  return { band, peers, range_usd: [Math.max(1, Math.round(value / spread)), Math.round(value * spread)] };
 }
 
 export interface Radar {
@@ -173,6 +188,14 @@ function gasNote(chain: string | undefined): string {
   return 'budget $1–10 of gas per transaction';
 }
 
+/** The whole plan's gas outlay, from the same per-transaction rates as gasNote. */
+function gasTotal(chain: string | undefined): string {
+  if (chain === 'Ethereum') return '$40–150 of mainnet gas in total';
+  if (chain === 'Solana') return 'under $1 of gas in total';
+  if (chain !== undefined && L2_CHAINS.has(chain)) return '$3–15 of gas in total';
+  return '$10–60 of gas in total';
+}
+
 /**
  * A concrete farm plan for one protocol: five steps with amounts, costs and
  * durations, templated by what the protocol does and filled with its own
@@ -192,6 +215,7 @@ export function farmSteps(p: Protocol): string[] {
   const weeks = p.tvl_usd >= 1e8 ? '10–12 weeks' : '6–10 weeks';
   const head = `Open ${p.name} on ${chain} and connect a wallet you control; ${gas}, and setup takes about 15 minutes.`;
   const tail = `Keep the routine running for ${weeks}: consistency across many weeks is what points systems and snapshots usually reward, and stopping after one session wastes the gas already spent.`;
+  const budget = `Total budget for the whole plan: ${working} of working capital — yours throughout, it comes back when you exit, it is not spent — plus ${gasTotal(p.chains[0])} over ${weeks}; the only money truly spent is the gas and, on lending routes, a small interest spread.`;
   const record = `Log every transaction hash, date and amount in a simple sheet as you go; if ${p.name} later opens a claim or a checker, that record proves the wallet's history in minutes instead of hours.`;
 
   if (cat === 'Lending' || cat === 'CDP') {
@@ -202,6 +226,7 @@ export function farmSteps(p: Protocol): string[] {
       `Keep the position's health factor above 1.6 at all times and check it weekly for 10 minutes; a liquidation erases both the funds and the farming history you are building.`,
       tail,
       record,
+      budget,
     ];
   }
   if (cat === 'Dexs' || cat === 'DEX Aggregator' || cat === 'Dex Aggregator') {
@@ -212,6 +237,7 @@ export function farmSteps(p: Protocol): string[] {
       `Use one of its limit-order or advanced order types at least twice if it offers them${more}; feature breadth is cheap to show and few farmers bother.`,
       tail,
       record,
+      budget,
     ];
   }
   if (cat === 'Derivatives' || cat === 'Options' || cat === 'Perps') {
@@ -222,6 +248,7 @@ export function farmSteps(p: Protocol): string[] {
       `Withdraw a small amount once, mid-way, and deposit it back a few days later${more}; a full deposit-trade-withdraw cycle is the complete user journey and is cheap in gas.`,
       tail,
       record,
+      budget,
     ];
   }
   if (cat === 'Yield' || cat === 'Yield Aggregator' || cat === 'Indexes' || cat === 'Basis Trading' || cat === 'RWA') {
@@ -232,6 +259,7 @@ export function farmSteps(p: Protocol): string[] {
       `Claim or compound any yield it pays at least twice, a few weeks apart; repeated claim transactions build the on-chain history that distinguishes a farmer from a passer-by.`,
       tail,
       record,
+      budget,
     ];
   }
   return [
@@ -241,6 +269,7 @@ export function farmSteps(p: Protocol): string[] {
     `Add a second wallet action it offers, such as a governance vote, a referral-free signup or a testnet-to-mainnet bridge through its official route, whenever one exists.`,
     tail,
     record,
+    budget,
   ];
 }
 
@@ -282,6 +311,7 @@ export function buildRadar(snapshot: Snapshot): { board: BoardRow[]; radar: Rada
     age_years: s.p.listed_at === null ? null : Math.round((daysBetween(s.p.listed_at, snapshot.as_of) / 365.25) * 10) / 10,
     watchlist: watch.has(s.p.slug),
     factors: s.factors,
+    confidence: confidenceFor(table.get(s.p.category ?? 'Uncategorised')?.peers ?? 0, s.value),
   }));
 
   const multiples = [...table.entries()]
