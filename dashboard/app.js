@@ -80,7 +80,7 @@ function renderBoard() {
       <td class="num ${r.change_7d === null ? '' : r.change_7d >= 0 ? 'up' : 'down'}">${pct(r.change_7d)}</td>
       <td class="num">${r.age_years === null ? '—' : r.age_years.toFixed(1) + ' y'}</td>
       <td class="chains">${esc(r.chains.slice(0, 3).join(', '))}${r.chains.length > 3 ? ` +${r.chains.length - 3}` : ''}</td>
-      <td><div class="bar-wrap"><div class="bar-bg"><div class="bar" style="width:${Math.max(2, (r.implied_value_usd / maxImplied) * 110)}px"></div></div><span class="ival">${money(r.implied_value_usd)}</span></div></td>
+      <td><div class="bar-wrap"><div class="bar-bg"><div class="bar" style="width:${Math.max(2, (r.implied_value_usd / maxImplied) * 110)}px"></div></div><span class="ival">${money(r.implied_value_usd)}</span><span class="conf conf-${r.confidence.band}">${r.confidence.band.toUpperCase()}</span></div></td>
       <td>›</td>
     </tr>`).join('');
   $('board-note').textContent = 'Click any row for the protocol\'s factor breakdown and farm plan. Ranks are the model\'s claim: implied value falls as rank ascends.';
@@ -111,7 +111,7 @@ function renderDetail(slug) {
         <h2>${esc(r.name)}${r.watchlist ? '<span class="badge">WATCHLIST</span>' : ''}</h2>
         <p class="detail-sub">Rank #${r.rank} of ${rows.length} · ${esc(r.category ?? 'Uncategorised')} · records no token in the snapshot</p>
       </div>
-      <div class="big-value"><span>implied launch value</span><b>${money(r.implied_value_usd)}</b></div>
+      <div class="big-value"><span>implied launch value</span><b>${money(r.implied_value_usd)}</b><span class="range-line">plausible range ${money(r.confidence.range_usd[0])} – ${money(r.confidence.range_usd[1])}</span></div>
     </div>
     <div class="cards">
       <div class="card">
@@ -131,6 +131,7 @@ function renderDetail(slug) {
           <dt>Tracked since</dt><dd>${r.listed_at ?? 'unreported'}</dd>
           <dt>Chains</dt><dd>${esc(r.chains.join(', '))}</dd>
           <dt>On the house watchlist</dt><dd>${r.watchlist ? 'yes — TVL at or above the $50M floor' : 'no — below the floor or outside its rule; the radar ranks it anyway'}</dd>
+          <dt>Model confidence</dt><dd>${r.confidence.band} — ${r.confidence.peers > 0 ? `the multiple is the median of ${r.confidence.peers} traded ${esc(r.category ?? '')} peers` : 'no traded peers in its category, so the all-peers median stands in'}; the plausible range widens as the anchoring thins</dd>
         </dl>
       </div>
       <div class="card">
