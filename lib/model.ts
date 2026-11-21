@@ -2,11 +2,17 @@
 //
 // Idea: a pre-token protocol's launch value is estimated from the snapshot's
 // own figures only. Protocols whose token already trades give, per category,
-// a market-cap-to-TVL multiple. A protocol that records no token is priced as
-// its TVL times its category's multiple, then adjusted by four factors the
+// a market-cap-to-TVL multiple. A category priced from few peers is not
+// trusted like one priced from many: each category median is weighted toward
+// the all-peers median by its peer count (credibility shrinkage), so a thin
+// category borrows strength from the whole market instead of standing on
+// three data points. A protocol that records no token is priced as its TVL
+// times its category's weighted multiple, then adjusted by four factors the
 // snapshot also carries: its seven-day TVL growth, how long it has run with
 // no token (maturity), how many chains it spans (breadth), and a size
 // compression so the very largest TVLs do not extrapolate without limit.
+// Every row also carries a one-line signal: the model's own reasons for the
+// rank, in plain words, generated from the same figures.
 //
 // The board is every protocol that records no token and is not a wrapped,
 // staked, bridged or exchange product of one that trades — the watchlist's
@@ -52,6 +58,8 @@ export interface RadarRow extends BoardRow {
   factors: { multiple: number; growth: number; maturity: number; breadth: number; size: number };
   /** How firmly the row's multiple is anchored: the traded-peer count behind it. */
   confidence: { band: 'high' | 'medium' | 'low'; peers: number; range_usd: [number, number] };
+  /** One plain-language line naming the model's main reasons for this row's rank. */
+  signal: string;
 }
 
 /**
@@ -71,7 +79,7 @@ export interface Radar {
   as_of: string;
   floor_usd: number;
   counts: { protocols: number; tokenised: number; eligible: number; watchlist: number; rows: number };
-  multiples: { category: string; peers: number; multiple: number }[];
+  multiples: { category: string; peers: number; multiple: number; raw: number }[];
   fallback_multiple: number;
   rows: RadarRow[];
 }
@@ -121,8 +129,15 @@ export function isEligible(p: Protocol): boolean {
   return p.gecko_id === null && p.symbol === null && !isProduct(p);
 }
 
-/** Per-category market-cap/TVL multiples from the protocols whose token trades. */
-export function categoryMultiples(snapshot: Snapshot): { table: Map<string, { peers: number; multiple: number }>; fallback: number } {
+/**
+ * Per-category market-cap/TVL multiples from the protocols whose token trades.
+ * Each category's median is credibility-weighted toward the all-peers median:
+ * with n traded peers the weight on the category's own median is n/(n+4), so
+ * a 3-peer category leans heavily on the market-wide figure while a 30-peer
+ * category stands almost entirely on its own evidence. The raw median is kept
+ * alongside so the interface can show both figures honestly.
+ */
+export function categoryMultiples(snapshot: Snapshot): { table: Map<string, { peers: number; multiple: number; raw: number }>; fallback: number } {
   const byCategory = new Map<string, number[]>();
   const all: number[] = [];
   for (const p of snapshot.protocols) {
@@ -135,10 +150,13 @@ export function categoryMultiples(snapshot: Snapshot): { table: Map<string, { pe
     byCategory.set(key, list);
   }
   const fallback = clamp(median(all), 0.02, 2.5);
-  const table = new Map<string, { peers: number; multiple: number }>();
+  const table = new Map<string, { peers: number; multiple: number; raw: number }>();
   for (const [category, ratios] of byCategory) {
     if (ratios.length < 3) continue; // too few peers to price a category from
-    table.set(category, { peers: ratios.length, multiple: clamp(median(ratios), 0.02, 2.5) });
+    const raw = clamp(median(ratios), 0.02, 2.5);
+    const n = ratios.length;
+    const multiple = clamp((n * raw + 4 * fallback) / (n + 4), 0.02, 2.5);
+    table.set(category, { peers: n, multiple, raw });
   }
   return { table, fallback };
 }
@@ -168,6 +186,36 @@ export function factorsFor(p: Protocol, multiple: number, asOf: string): Factors
 export function impliedValue(p: Protocol, f: Factors): number {
   const raw = p.tvl_usd * f.multiple * f.growth * f.maturity * f.breadth * f.size;
   return Math.max(1, Math.round(raw));
+}
+
+/**
+ * The model's reasons for one row's rank, in one plain sentence, built only
+ * from the row's own figures: how its multiple is anchored, which way its TVL
+ * is moving, how long it has run tokenless, and anything the size or breadth
+ * factors did. A reader should be able to see why the row sits where it sits
+ * without opening the workings.
+ */
+export function signalFor(p: Protocol, f: Factors, peers: number, asOf: string): string {
+  const parts: string[] = [];
+  if (peers > 0) {
+    parts.push(`priced from ${peers} traded ${p.category ?? 'uncategorised'} peers`);
+  } else {
+    parts.push('priced from the all-peers median — no traded peers in its category');
+  }
+  if (p.change_7d !== null && p.change_7d >= 5) {
+    parts.push(`TVL up ${p.change_7d.toFixed(1)}% in seven days lifts it`);
+  } else if (p.change_7d !== null && p.change_7d <= -5) {
+    parts.push(`TVL down ${Math.abs(p.change_7d).toFixed(1)}% in seven days drags it`);
+  }
+  if (p.listed_at !== null) {
+    const years = daysBetween(p.listed_at, asOf) / 365.25;
+    if (years >= 2) parts.push(`tokenless for ${years.toFixed(1)} years, so maturity counts for it`);
+    else if (years < 0.5) parts.push('tracked for under six months, so maturity counts against it');
+  }
+  if (p.chains.length >= 5) parts.push(`live on ${p.chains.length} chains`);
+  if (f.size < 1) parts.push('size compression trims a TVL past $1B');
+  const body = parts.join('; ');
+  return body.charAt(0).toUpperCase() + body.slice(1) + '.';
 }
 
 /** $1,234 / $12.3M / $1.24B formatting for farm-plan text. */
@@ -224,6 +272,7 @@ export function farmSteps(p: Protocol): string[] {
       `Supply ${working} of a blue-chip asset (ETH or a major stablecoin) as collateral on ${chain}; at ${money(p.tvl_usd)} of TVL your deposit is small, so favour the largest, most liquid market it offers.`,
       `Borrow 25–40% of the collateral's value in a stablecoin, hold it one to two weeks, then repay in full; one clean borrow-and-repay cycle shows real use and costs only the interest spread plus gas.`,
       `Keep the position's health factor above 1.6 at all times and check it weekly for 10 minutes; a liquidation erases both the funds and the farming history you are building.`,
+      `Risk to respect: keep a small gas reserve on ${chain} at all times so you can top up collateral within minutes in a volatile hour — most lending losses while farming come from being unable to act, not from the borrow itself.`,
       tail,
       record,
       budget,
@@ -235,6 +284,7 @@ export function farmSteps(p: Protocol): string[] {
       `Make two or three swaps a week in the ${working} range, in both directions and in the pairs with the deepest liquidity; steady volume over ${weeks} reads as a real user, one large swap does not.`,
       `Add a small liquidity position (about $100–300) in a core pair and leave it at least a month; LP positions are the strongest usage signal a DEX records, and withdrawing early forfeits it.`,
       `Use one of its limit-order or advanced order types at least twice if it offers them${more}; feature breadth is cheap to show and few farmers bother.`,
+      `Risk to respect: a liquidity position can drift out of range and quietly bleed impermanent loss, so check it weekly and keep it small enough that a bad month is an annoyance, not a loss that matters.`,
       tail,
       record,
       budget,
@@ -246,6 +296,7 @@ export function farmSteps(p: Protocol): string[] {
       `Deposit ${working} as margin and open small hedged positions (long one market, short a correlated one) so market moves cost little while the account records genuine trading activity.`,
       `Trade two or three sessions a week for ${weeks}, keeping each position under 2× leverage; volume and session count are what these protocols track, not profit.`,
       `Withdraw a small amount once, mid-way, and deposit it back a few days later${more}; a full deposit-trade-withdraw cycle is the complete user journey and is cheap in gas.`,
+      `Risk to respect: funding rates and liquidation prices move while you sleep, so keep margin well above the minimum and never close only one side of a hedged pair — a hedge with one leg closed is a naked position.`,
       tail,
       record,
       budget,
@@ -257,6 +308,7 @@ export function farmSteps(p: Protocol): string[] {
       `Deposit ${working} into its flagship vault or product on ${chain} and hold it; at ${money(p.tvl_usd)} of TVL the flagship is where any future points or shares would concentrate.`,
       `After two to three weeks, move a third of the position into a second vault or product it offers${more}; holding more than one product shows deliberate use rather than a parked deposit.`,
       `Claim or compound any yield it pays at least twice, a few weeks apart; repeated claim transactions build the on-chain history that distinguishes a farmer from a passer-by.`,
+      `Risk to respect: vault yield often comes from incentives that can end without notice, and withdrawals can queue in stressed markets — favour the flagship product and test the exit once with a small withdrawal before committing the full amount.`,
       tail,
       record,
       budget,
@@ -267,6 +319,7 @@ export function farmSteps(p: Protocol): string[] {
     `Use its core product on ${chain} at least once a week for ${weeks} with ${working} of working capital; regular, modest activity is the pattern airdrop criteria are written to find.`,
     `Complete one full journey end to end — deposit or start, use the main feature, then withdraw or finish — rather than touching only the landing action${more}.`,
     `Add a second wallet action it offers, such as a governance vote, a referral-free signup or a testnet-to-mainnet bridge through its official route, whenever one exists.`,
+    `Risk to respect: points and airdrops are never promised, so treat every cost in this plan as money you can afford to lose — never farm with borrowed funds, and never farm from the wallet that holds your main savings.`,
     tail,
     record,
     budget,
@@ -312,10 +365,11 @@ export function buildRadar(snapshot: Snapshot): { board: BoardRow[]; radar: Rada
     watchlist: watch.has(s.p.slug),
     factors: s.factors,
     confidence: confidenceFor(table.get(s.p.category ?? 'Uncategorised')?.peers ?? 0, s.value),
+    signal: signalFor(s.p, s.factors, table.get(s.p.category ?? 'Uncategorised')?.peers ?? 0, snapshot.as_of),
   }));
 
   const multiples = [...table.entries()]
-    .map(([category, v]) => ({ category, peers: v.peers, multiple: Math.round(v.multiple * 1000) / 1000 }))
+    .map(([category, v]) => ({ category, peers: v.peers, multiple: Math.round(v.multiple * 1000) / 1000, raw: Math.round(v.raw * 1000) / 1000 }))
     .sort((a, b) => b.peers - a.peers);
 
   const radar: Radar = {
