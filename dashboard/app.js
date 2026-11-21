@@ -33,7 +33,8 @@ $('model-strip').innerHTML =
   `<p class="formula">implied value = <b>TVL</b> × <b>category multiple</b> × <b>7d growth</b> × <b>years tokenless</b> × <b>chain breadth</b> × <b>size compression</b></p>` +
   `<div class="mult-table">` +
   R.multiples.slice(0, 10).map((m) => `<span>${esc(m.category)} <b>×${m.multiple.toFixed(2)}</b> (${m.peers} traded peers)</span>`).join('') +
-  `<span>other categories <b>×${R.fallback_multiple.toFixed(2)}</b> (all-peers median)</span></div>`;
+  `<span>other categories <b>×${R.fallback_multiple.toFixed(2)}</b> (all-peers median)</span></div>` +
+  `<p class="formula">Each category multiple is credibility-weighted toward the all-peers median by its peer count — a category priced from 3 traded peers leans on the whole market, one priced from 30 stands on its own. Every row states its reasons in its signal line.</p>`;
 
 /* ---------- filters ---------- */
 const categories = [...new Set(rows.map((r) => r.category).filter(Boolean))].sort();
@@ -75,7 +76,7 @@ function renderBoard() {
   $('board-body').innerHTML = list.map((r) => `
     <tr data-slug="${esc(r.slug)}">
       <td class="num">${r.rank}</td>
-      <td><span class="pname">${esc(r.name)}</span>${r.watchlist ? '<span class="badge">WATCHLIST</span>' : ''}<br><span class="pcat">${esc(r.category ?? 'Uncategorised')}</span></td>
+      <td><span class="pname">${esc(r.name)}</span>${r.watchlist ? '<span class="badge">WATCHLIST</span>' : ''}<br><span class="pcat">${esc(r.category ?? 'Uncategorised')}</span><br><span class="psignal">${esc(r.signal)}</span></td>
       <td class="num">${money(r.tvl_usd)}</td>
       <td class="num ${r.change_7d === null ? '' : r.change_7d >= 0 ? 'up' : 'down'}">${pct(r.change_7d)}</td>
       <td class="num">${r.age_years === null ? '—' : r.age_years.toFixed(1) + ' y'}</td>
@@ -116,7 +117,8 @@ function renderDetail(slug) {
     <div class="cards">
       <div class="card">
         <h3>Why this value — the model's workings</h3>
-        ${factorRow('Category multiple', f.multiple, hasPeers ? `median market-cap/TVL of traded ${esc(r.category ?? 'peers')} protocols` : `fewer than 3 traded ${esc(r.category ?? '')} peers — the all-peers median stands in`)}
+        <p class="signal-line">${esc(r.signal)}</p>
+        ${factorRow('Category multiple', f.multiple, hasPeers ? `credibility-weighted median market-cap/TVL of traded ${esc(r.category ?? 'peers')} protocols` : `fewer than 3 traded ${esc(r.category ?? '')} peers — the all-peers median stands in`)}
         ${factorRow('7d growth', f.growth, r.change_7d === null ? 'TVL change unreported — no adjustment' : `TVL ${pct(r.change_7d)} over seven days`)}
         ${factorRow('Years tokenless', f.maturity, r.listed_at === null ? 'tracking start unreported' : `tracked since ${r.listed_at} — ${r.age_years.toFixed(1)} years with no token`)}
         ${factorRow('Chain breadth', f.breadth, `live on ${r.chains.length} chain${r.chains.length === 1 ? '' : 's'}`)}

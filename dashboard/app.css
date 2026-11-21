@@ -113,3 +113,7 @@ ol.steps li { margin: 0 0 9px; }
 .conf-medium { background: #713f12; color: #fde68a; }
 .conf-low { background: #7f1d1d; color: #fca5a5; }
 .range-line { display: block; font-size: 11px; color: #9db4a0; margin-top: 2px; }
+
+/* v3: per-row signal line on the board, and the signal statement on detail pages */
+.psignal { color: var(--muted, #8a8f98); font-size: 11px; line-height: 1.35; display: inline-block; max-width: 340px; }
+.signal-line { font-size: 13.5px; line-height: 1.5; border-left: 3px solid var(--accent, #e8b33c); padding: 6px 10px; margin: 0 0 12px; background: rgba(232, 179, 60, 0.07); }
